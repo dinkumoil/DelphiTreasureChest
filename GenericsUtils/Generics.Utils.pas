@@ -36,23 +36,24 @@ type
 
   TEnum = record
   strict private const
+    ERR_MSG_NO_TYPE_INFO          = 'No runtime type information available for this data type.';
     ERR_MSG_NOT_AN_ENUM_TYPE      = 'Data type %s is not an enum type.';
     ERR_MSG_NOT_AN_ENUM_VALUE     = '%d is not a valid value of enum %s.';
     ERR_MSG_UNSUPPORTED_ENUM_SIZE = 'Enum %s has an unsupported size.';
 
   private
-    class procedure CheckIfEnum<T: record>(AEnum: T); static;
-    class procedure CheckRange<T: record>(Value: integer); static;
+    class procedure CheckIfEnum<T: record>; static;
+    class procedure CheckRange<T: record>(const Value: integer); static;
 
   public
-    class function AsString<T: record>(AEnum: T): string; static;
-    class function AsInteger<T: record>(AEnum: T): Integer; static;
+    class function AsString<T: record>(const AEnum: T): string; static;
+    class function AsInteger<T: record>(const AEnum: T): Integer; static;
 
     class function FromString<T: record>(const Value: string): T; static;
-    class function FromInteger<T: record>(Value: integer): T; static;
+    class function FromInteger<T: record>(const Value: integer): T; static;
 
-    class function FromStringDef<T: record>(const Value: string; DefaultValue: T): T; static;
-    class function FromIntegerDef<T: record>(Value: integer; DefaultValue: T): T; static;
+    class function FromStringDef<T: record>(const Value: string; const DefaultValue: T): T; static;
+    class function FromIntegerDef<T: record>(const Value: integer; const DefaultValue: T): T; static;
   end;
 
 
@@ -62,12 +63,13 @@ type
 
   TSet = record
   strict private const
-    ERR_MSG_NOT_A_SET_TYPE = 'Data type is not a set type.';
+    ERR_MSG_NO_TYPE_INFO   = 'No runtime type information available for this data type.';
+    ERR_MSG_NOT_A_SET_TYPE = 'Data type %s is not a set type.';
 
     FSetBitsOfValue: packed array[0..15] of byte = (0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,4);
 
   private
-    class procedure CheckIfSet<T>(const ASet: T); static;
+    class procedure CheckIfSet<T>; static;
 
   public
     class function CountItems<T>(const ASet: T): integer; static;
@@ -142,14 +144,21 @@ end;
 // TEnum
 // =============================================================================
 
-class procedure TEnum.CheckIfEnum<T>(AEnum: T);
+class procedure TEnum.CheckIfEnum<T>;
 begin
-  if PTypeInfo(TypeInfo(T)).Kind <> tkEnumeration then
-    raise EConvertError.CreateFmt(ERR_MSG_NOT_AN_ENUM_TYPE, [PTypeInfo(TypeInfo(T)).Name]);
+  try
+    if PTypeInfo(TypeInfo(T)).Kind <> tkEnumeration then
+      raise EConvertError.CreateFmt(ERR_MSG_NOT_AN_ENUM_TYPE, [PTypeInfo(TypeInfo(T)).Name]);
+  except
+    on EConvertError do
+      raise;
+    else
+      raise EConvertError.Create(ERR_MSG_NO_TYPE_INFO);
+  end;
 end;
 
 
-class procedure TEnum.CheckRange<T>(Value: integer);
+class procedure TEnum.CheckRange<T>(const Value: integer);
 var
   TypData: PTypeData;
 
@@ -161,15 +170,15 @@ begin
 end;
 
 
-class function TEnum.AsString<T>(AEnum: T): string;
+class function TEnum.AsString<T>(const AEnum: T): string;
 begin
   Result := GetEnumName(TypeInfo(T), AsInteger(AEnum));
 end;
 
 
-class function TEnum.AsInteger<T>(AEnum: T): Integer;
+class function TEnum.AsInteger<T>(const AEnum: T): Integer;
 begin
-  CheckIfEnum<T>(AEnum);
+  CheckIfEnum<T>();
 
   case SizeOf(T) of
     1:   Result := PByte(@AEnum)^;
@@ -184,15 +193,15 @@ end;
 
 class function TEnum.FromString<T>(const Value: string): T;
 begin
-  CheckIfEnum<T>(Default(T));
+  CheckIfEnum<T>();
 
   Result := FromInteger<T>(GetEnumValue(TypeInfo(T), Value));
 end;
 
 
-class function TEnum.FromInteger<T>(Value: integer): T;
+class function TEnum.FromInteger<T>(const Value: integer): T;
 begin
-  CheckIfEnum<T>(Default(T));
+  CheckIfEnum<T>();
   CheckRange<T>(Value);
 
   case SizeOf(T) of
@@ -204,7 +213,7 @@ begin
 end;
 
 
-class function TEnum.FromStringDef<T>(const Value: string; DefaultValue: T): T;
+class function TEnum.FromStringDef<T>(const Value: string; const DefaultValue: T): T;
 var
   Dummy: integer;
 
@@ -219,7 +228,7 @@ begin
 end;
 
 
-class function TEnum.FromIntegerDef<T>(Value: integer; DefaultValue: T): T;
+class function TEnum.FromIntegerDef<T>(const Value: integer; const DefaultValue: T): T;
 var
   Dummy: integer;
 
@@ -239,10 +248,17 @@ end;
 // TSet
 // =============================================================================
 
-class procedure TSet.CheckIfSet<T>(const ASet: T);
+class procedure TSet.CheckIfSet<T>;
 begin
-  if PTypeInfo(TypeInfo(T)).Kind <> tkSet then
-    raise EConvertError.CreateFmt(ERR_MSG_NOT_A_SET_TYPE, [PTypeInfo(TypeInfo(T)).Name]);
+  try
+    if PTypeInfo(TypeInfo(T)).Kind <> tkSet then
+      raise EConvertError.CreateFmt(ERR_MSG_NOT_A_SET_TYPE, [PTypeInfo(TypeInfo(T)).Name]);
+  except
+    on EConvertError do
+      raise;
+    else
+      raise EConvertError.Create(ERR_MSG_NO_TYPE_INFO);
+  end;
 end;
 
 
@@ -254,7 +270,7 @@ var
 begin
   Result := 0;
 
-  CheckIfSet<T>(ASet);
+  CheckIfSet<T>();
 
   for I := 0 to Pred(SizeOf(T)) do
   begin
@@ -275,8 +291,8 @@ begin
   Result := '[';
 
   try
-    CheckIfSet<T>(ASet);
-    TEnum.CheckIfEnum<TI>(Default(TI));
+    CheckIfSet<T>();
+    TEnum.CheckIfEnum<TI>();
 
     Items := AsArray<T, TI>(ASet);
 
@@ -303,8 +319,8 @@ var
 begin
   Result := TArray<TI>.Create();
 
-  CheckIfSet<T>(ASet);
-  TEnum.CheckIfEnum<TI>(Default(TI));
+  CheckIfSet<T>();
+  TEnum.CheckIfEnum<TI>();
 
   SetLength(Result, CountItems(ASet));
 
@@ -338,8 +354,8 @@ var
 begin
   Result := TArray<string>.Create();
 
-  CheckIfSet<T>(ASet);
-  TEnum.CheckIfEnum<TI>(Default(TI));
+  CheckIfSet<T>();
+  TEnum.CheckIfEnum<TI>();
 
   Items := AsArray<T, TI>(ASet);
   SetLength(Result, Length(Items));
@@ -356,8 +372,8 @@ var
 begin
   Result := Default(T);
 
-  CheckIfSet<T>(Default(T));
-  TEnum.CheckIfEnum<TI>(Default(TI));
+  CheckIfSet<T>();
+  TEnum.CheckIfEnum<TI>();
 
   S := TStringList.Create;
 
@@ -389,8 +405,8 @@ var
 begin
   Result := Default(T);
 
-  CheckIfSet<T>(Default(T));
-  TEnum.CheckIfEnum<TI>(Default(TI));
+  CheckIfSet<T>();
+  TEnum.CheckIfEnum<TI>();
 
   for I := 0 to Pred(Length(AArr)) do
   begin
@@ -411,8 +427,8 @@ var
 begin
   Result := Default(T);
 
-  CheckIfSet<T>(Default(T));
-  TEnum.CheckIfEnum<TI>(Default(TI));
+  CheckIfSet<T>();
+  TEnum.CheckIfEnum<TI>();
 
   Items := TArray<TI>.Create();
   SetLength(Items, Length(AStrArr));
