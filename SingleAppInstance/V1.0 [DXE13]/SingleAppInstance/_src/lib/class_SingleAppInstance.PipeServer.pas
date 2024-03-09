@@ -148,6 +148,8 @@ begin
   if ConnectEvent = 0 then
     exit;
 
+  PipeInst := nil;
+
   // Initialize single OVERLAPPED struct for establishing a client connection
   // and store event object's handle
   ZeroMemory(@ConnectSync, SizeOf(TOverlapped));
