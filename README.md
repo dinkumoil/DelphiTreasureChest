@@ -53,3 +53,8 @@ A unit providing a Smart Pointer implementation.
 ## TimeConverter
 
 A unit with conversion routines from/to Delphi's `TDateTime`.
+
+
+## ToggleMicMute
+
+A small Windows system tray application that allows you to mute your microphone by clicking on its icon or using a global keyboard shortcut.
