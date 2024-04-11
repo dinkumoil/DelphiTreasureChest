@@ -16,5 +16,5 @@ The icon shows the status of the selected microphone, green means active and red
 
 # History
 
-v1.0 - December 2024
+v1.0 - 2011
 - Initial version
