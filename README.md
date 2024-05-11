@@ -20,6 +20,11 @@ A unit with generic helper functions for arrays, enums and sets.
 A function to get the size of a file as a `Int64` value.
 
 
+## IniPersistence
+
+Units for generic INI file handling. Example code included.
+
+
 ## IsConsoleApp
 
 A function to analyze the PE header of an `EXE` file in order to get the info if it is a console application.
