@@ -27,8 +27,8 @@ unit System.IniFiles.Persistence;
 interface
 
 uses
-  System.SysUtils, System.DateUtils, System.Classes, System.UITypes, System.TypInfo,
-  System.Rtti, Vcl.Graphics, Vcl.Dialogs;
+  System.SysUtils, System.DateUtils, Soap.XSBuiltIns, System.UITypes, System.Classes,
+  System.TypInfo, System.Rtti, Vcl.Graphics, Vcl.Dialogs;
 
 
 type
@@ -413,7 +413,7 @@ end;
 constructor IniDateTimeValueAttribute.Create(const aSection, aName: string; const aDefaultValue: string = '');
 begin
   if aDefaultValue <> '' then
-    Create(aSection, aName, ISO8601ToDate(aDefaultValue), true)
+    Create(aSection, aName, XMLTimeToDateTime(aDefaultValue, true), true)
   else
     Create(aSection, aName, 0, false);
 end;
@@ -422,9 +422,9 @@ end;
 constructor IniDateTimeValueAttribute.Create(const aSection, aName: string; const aDefaultValue: TDateTime = 0; const aDefaultValueIsUTC: boolean = false);
 begin
   if not aDefaultValueIsUTC then
-    inherited Create(aSection, aName, DateToISO8601(ToUniversalTime(aDefaultValue)))
+    inherited Create(aSection, aName, DateTimeToXMLTime(ToUniversalTime(aDefaultValue), false))
   else
-    inherited Create(aSection, aName, DateToISO8601(aDefaultValue));
+    inherited Create(aSection, aName, DateTimeToXMLTime(aDefaultValue, false));
 end;
 
 
@@ -680,7 +680,7 @@ begin
       begin
         // Special treatment of TDateTime values
         if aValue.TypeInfo.Name = PTypeInfo(TypeInfo(TDateTime)).Name then
-          aValue := ToLocalTime(ISO8601ToDate(aData))
+          aValue := ToLocalTime(XMLTimeToDateTime(aData, true))
         else
           aValue := StrToFloat(aData, IPFormatSettings);
 
@@ -771,7 +771,7 @@ begin
     begin
       // Special treatment for TDateTime values
       if aValue.TypeInfo.Name = PTypeInfo(TypeInfo(TDateTime)).Name then
-        Result := DateToISO8601(ToUniversalTime(aValue.AsExtended))
+        Result := DateTimeToXMLTime(ToUniversalTime(aValue.AsExtended), false)
       else
         Result := FloatToStr(aValue.AsExtended, IPFormatSettings);
 
