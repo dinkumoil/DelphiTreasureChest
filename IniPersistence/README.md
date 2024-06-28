@@ -28,7 +28,7 @@ begin
 end;
 ```
 
-2. Set an event handler for retrieving the INI files's path and call _TSettings_' `Load` method manually. The event handler is used every time the settings class needs to know the path of the INI file. This way you are even able to change the INI file's path at runtime. But you have to be carful what the code of the event handler does. Since it is executed immediately before program termination it should not access resources that are already freed at that time. To avoid this you can also free the settings object manually. To do so, comment out the call to `TSettings.Instance.Free` in the `finalization` section of unit _TSettings.pas_ and add that call to the code of your main form's destructor or `FormDestroy` event handler.
+2. Set an event handler for retrieving the INI files's path and call _TSettings_' `Load` method manually. The event handler is used every time the settings class needs to know the path of the INI file. This way you are even able to change the INI file's path at runtime. But you have to be careful what the code of the event handler does. Since it is executed immediately before program termination it should not access resources that are already freed at that time. To avoid this you can also free the settings object manually. To do so, comment out the call to `TSettings.Instance.Free` in the `finalization` section of unit _TSettings.pas_ and add that call to the code of your main form's destructor or `FormDestroy` event handler.
 
 ```Pascal
 procedure TMainForm.FormCreate(Sender: TObject);
@@ -44,7 +44,7 @@ end;
 ```
 
 3. Set an anonymous procedure (or closure) for retrieving the INI files's path and call _TSettings_' `Load` method manually. The anonymous procedure is used every time the settings class needs to know the path of the INI file, so you are able to change the INI file's path at runtime by using this variant as well. Like with the event handler variant mentioned above you must be careful about what resources the anonymous procedure's code accesses. See my advice there.
-  
+
 ```Pascal
 procedure TMainForm.FormCreate(Sender: TObject);
 begin
