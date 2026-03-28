@@ -19,7 +19,7 @@ This project uses `GpCommandLineParser` by Primoz Gabrijelcic, see [GpDelphiUnit
 ## Features
 
 - **Schema Validation** — Validate an XML document against an XSD schema
-- **Namespace Listing** — List all namespaces used in an XML document
+- **Namespace Listing** — List all namespaces used in an XML document (companion functionality for XPath Queries)
 - **XPath Queries** — Execute XPath expressions and output matching nodes
 - **XSLT Transformation** — Transform XML using an XSL stylesheet, with support for parameters
 - **Pretty-Print (SAX)** — Reformat an XML document with proper indentation using SAX Reader/Writer
