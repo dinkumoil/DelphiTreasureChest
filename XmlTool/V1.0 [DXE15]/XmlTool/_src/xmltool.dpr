@@ -242,6 +242,7 @@ procedure EmitStream(const AStream: TStringStream); forward;
 
 function  GetDocEncoding(const ADoc: IXMLDOMDocument; const ADefaultEncoding: string): TEncoding; forward;
 function  GetDocNamespaces(const ADoc: IXMLDOMDocument): TNamespaceMap; forward;
+function  GetDocNamespacesList(const ANamespaces: TNamespaceMap; AFormattedOutput: boolean): string; forward;
 
 
 
@@ -661,12 +662,8 @@ end;
 
 function ListNamespaces: TResultCode;
 var
-  XMLDoc:       IXMLDOMDocument2;
-  Namespaces:   TNamespaceMap;
-  NamespaceIDs: TNamespaceInfo;
-  Msg:          TStringBuilder;
-  NSN:          string;
-  NSUri:        string;
+  XMLDoc:     IXMLDOMDocument2;
+  Namespaces: TNamespaceMap;
 
 begin
   // Load XML
@@ -678,6 +675,7 @@ begin
   if not CheckXmlDocument(XmlDoc) then
     exit(rcLoadingXmlFailed);
 
+  // Detect namespaces
   Namespaces := GetDocNamespaces(XMLDoc);
 
   try
@@ -688,29 +686,7 @@ begin
 
     // Output namespaces
     if not Settings.Quiet then
-    begin
-      Msg := TStringBuilder.Create;
-
-      try
-        for NSN in Namespaces.Keys do
-        begin
-          NamespaceIDs := Namespaces[NSN];
-
-          for NSUri in NamespaceIDs.Keys do
-          begin
-            if Msg.Length > 0 then
-              Msg.AppendLine;
-
-            Msg.AppendFormat('%s = %s', [NSN, NSUri]);
-          end;
-        end;
-
-        EmitText(Msg.ToString);
-
-      finally
-        Msg.Free;
-      end;
-    end;
+      EmitText(GetDocNamespacesList(Namespaces, true));
 
   finally
     Namespaces.Free;
@@ -724,16 +700,13 @@ end;
 
 function ExecuteXPathQuery: TResultCode;
 var
-  XMLDoc:       IXMLDOMDocument2;
-  NodeList:     IXMLDOMNodeList;
-  Namespaces:   TNamespaceMap;
-  NamespaceIDs: TNamespaceInfo;
-  OutStream:    TStringStream;
-  Msg:          TStringBuilder;
-  DocEnc:       TEncoding;
-  NSN:          string;
-  NSUri:        string;
-  Idx:          integer;
+  XMLDoc:     IXMLDOMDocument2;
+  NodeList:   IXMLDOMNodeList;
+  Namespaces: TNamespaceMap;
+  OutStream:  TStringStream;
+  DocEnc:     TEncoding;
+  Msg:        TStringBuilder;
+  Idx:        integer;
 
 begin
   // Load XML
@@ -753,33 +726,13 @@ begin
   OutStream := TStringStream.Create('', DocEnc, true);  // Manages lifetime of TEncoding
 
   try
-    // Detect namespaces and build SelectionNamespaces string
+    // Detect namespaces and set SelectionNamespaces string
     Namespaces := GetDocNamespaces(XMLDoc);
 
-    Msg := TStringBuilder.Create;
-
     try
-      try
-        for NSN in Namespaces.Keys do
-        begin
-          NamespaceIDs := Namespaces[NSN];
-
-          if NamespaceIDs.Count = 1 then
-            Msg.AppendFormat(' %s="%s"', [NSN, NamespaceIDs.Keys.ToArray[0]])
-          else
-            for NSUri in NamespaceIDs.Keys do
-              Msg.AppendFormat(' %s%d="%s"', [NSN, NamespaceIDs[NSUri], NSUri]);
-        end;
-
-      finally
-        Namespaces.Free;
-      end;
-
-      // Set SelectionNamespaces
-      XMLDoc.setProperty('SelectionNamespaces', Trim(Msg.ToString));
-
+      XMLDoc.setProperty('SelectionNamespaces', GetDocNamespacesList(Namespaces, false));
     finally
-      Msg.Free;
+      Namespaces.Free;
     end;
 
     // Execute XPath query
@@ -1257,6 +1210,55 @@ begin
     // for regular namespace declarations
     else if not IsRegularNS and not Result[NSN].ContainsKey(NSUri) then
       Result[NSN].Add(NSUri, Succ(Result[NSN].Count));
+  end;
+end;
+
+
+function GetDocNamespacesList(const ANamespaces: TNamespaceMap; AFormattedOutput: boolean): string;
+var
+  Msg:          TStringBuilder;
+  NamespaceIDs: TNamespaceInfo;
+  FmtStr1:      string;
+  FmtStr2:      string;
+  NSN:          string;
+  NSUri:        string;
+
+begin
+  Result := '';
+
+  if ANamespaces.Count = 0 then
+    exit;
+
+  if AFormattedOutput then
+  begin
+    FmtStr1 := '%s = %s' + sLineBreak;
+    FmtStr2 := '%s%d = %s' + sLineBreak;
+  end
+  else
+  begin
+    FmtStr1 := ' %s="%s"';
+    FmtStr2 := ' %s%d="%s"';
+  end;
+
+  Msg := TStringBuilder.Create;
+
+  try
+    for NSN in ANamespaces.Keys do
+    begin
+      NamespaceIDs := ANamespaces[NSN];
+
+      if NamespaceIDs.Count = 1 then
+        Msg.AppendFormat(FmtStr1, [NSN, NamespaceIDs.Keys.ToArray[0]])
+      else
+        for NSUri in NamespaceIDs.Keys do
+          Msg.AppendFormat(FmtStr2, [NSN, NamespaceIDs[NSUri], NSUri]);
+    end;
+
+    // Remove unnecessary spaces (unformatted output) and line breaks (formatted output)
+    Result := Msg.ToString.Trim;
+
+  finally
+    Msg.Free;
   end;
 end;
 
