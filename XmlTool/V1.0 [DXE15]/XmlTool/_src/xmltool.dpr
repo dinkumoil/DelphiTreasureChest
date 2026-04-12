@@ -1176,7 +1176,7 @@ begin
   for Idx := 0 to Pred(NodeList.length) do
   begin
     Node        := NodeList.item[Idx];
-    NSN         := StringReplace(Node.nodeName, 'xmlns:', '', []);
+    NSN         := Node.baseName;  // Retrieve namespace alias
     IsRegularNS := false;
 
     // The namespace alias "xml" must not be used, so set a custom alias
