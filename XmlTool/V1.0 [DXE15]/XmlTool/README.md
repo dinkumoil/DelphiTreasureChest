@@ -1,13 +1,15 @@
 # XmlTool
 
-A Windows command-line utility for XML processing, built with Delphi 12.3 Athens.
+A Windows command-line utility for XML processing, written in Delphi 12.3 Athens.
+
+**Target OS:** MS Windows with MSXML 6.0 (Vista and later)
+
+**Author:** Andreas Heim, 2026-03
 
 
 ## Requirements
 
-- Microsoft Windows
-- MSXML 3.0 or later
-- Delphi 11.1 Alexandria for compiling to executable
+- At least Delphi 11.1 Alexandria for compiling to executable
 - At least Delphi 12.2 Athens to benefit from ordered dictionary types
 
 
@@ -150,3 +152,9 @@ Quiet validation (check exit code only):
 xmltool -q -s:schema.xsd data.xml
 echo %ERRORLEVEL%
 ```
+
+
+## History
+
+v1.0 - March 2026
+- Initial Version
