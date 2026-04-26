@@ -15,16 +15,15 @@ type
 
 
   TSettings = class(TObject)
+  public type
+    TDynStrArray   = array of string;                  // Traditional dynamic array; RTTI for array and element type available
+    TStrArrayIndex = 0..2;                             // Subrange type; RTTI available
+    TStrArrayFail  = array[0..2] of string;            // Static array; RTTI for array and element type available, no RTTI for inplace index type
+    TStrArray      = array[TStrArrayIndex] of string;  // Static array; RTTI for array, element and index type available
+
   private
     FVersion:      string;
     FActive:       boolean;
-    FIntVal:       integer;
-    FIntVal2:      integer;
-    FUIntVal:      cardinal;
-    FInt64Val:     int64;
-    FInt64Val2:    int64;
-    FUInt64Val:    uint64;
-    FFloatVal:     double;
     FDateTimeVal:  TDateTime;
     FDateTimeVal2: TDateTime;
     FDateTimeVal3: TDateTime;
@@ -33,6 +32,13 @@ type
     FEnumVal:      TTextFormats;
     FSetValue:     TTextFormat;
     FGUIDValue:    TGUID;
+    FCfgFileNames: TArray<string>;           // Preferred common case: modern dynamic array
+    FDatFileNames: TDynStrArray;             // Common case: traditional dynamic array
+    FTmpFileNames: TStrArray;                // Uncommon case: static array
+    // FTmpFileNames: array of string;       => Inplace type declaration of traditional dynamic array, does not compile
+    // FTmpFileNames: array[0..2] of string; => Inplace type declaration of static array, does not compile
+    // FTmpFileNames: TStrArrayFail;         => Static array with inplace index type declaration, causes runtime error
+    FGUIDs:        TArray<TGUID>;
 
   private
     class var FInstance:      TSettings;
@@ -44,6 +50,39 @@ type
     class function GetFilePath: string; static;
 
   public
+    [IniIntValue('Test', 'IntVal', -2147483648, true)]
+    IntVal: integer;
+
+    [IniIntValue('Test', 'IntVal2', 2147483647, true)]
+    IntVal2: integer;
+
+    [IniUIntValue('Test', 'UIntVal', 4294967295)]
+    UIntVal: cardinal;
+
+    [IniInt64Value('Test', 'Int64Val', -9223372036854775808, true)]
+    Int64Val: int64;
+
+    [IniInt64Value('Test', 'Int64Val2', 9223372036854775807, true)]
+    Int64Val2: int64;
+
+    [IniUInt64Value('Test', 'UInt64Val', 18446744073709551615)]
+    UInt64Val: uint64;
+
+    [IniFloatValue('Test', 'FloatVal', 100.5)]
+    FloatVal: double;
+
+    [IniStrValue('Test', 'InFile')]
+    InFileNames: TArray<string>;  // Modern dynamic array of strings
+
+    [IniStrValue('Test', 'OutFile', '')]
+    OutFileNames: TDynStrArray;  // Traditional dynamic array of strings
+
+    [IniStrValue('Test', 'LogFile', 'C:\Foo\Bar Baz.log')]
+    LogFileNames: TStrArray;  // Static array of strings
+
+    [IniSetValue('Test', 'Set', '[tfCalcRect, tfWordBreak]'), IniArrayLength(4)]  // Provide sets as string
+    Sets: TArray<TTextFormat>;  // Modern dynamic array of sets with at least 4 elements
+
     constructor Create; overload;
     constructor Create(const AFilePath: string); overload;
     constructor Create(AFilePathGetter: TGetFilePathEvent); overload;
@@ -66,27 +105,6 @@ type
     [IniBoolValue('Settings', 'Active', false)]
     property Active: boolean read FActive write FActive;
 
-    [IniIntValue('Test', 'IntVal', -2147483648, true)]
-    property IntVal: integer read FIntVal write FIntVal;
-
-    [IniIntValue('Test', 'IntVal2', 2147483647, true)]
-    property IntVal2: integer read FIntVal2 write FIntVal2;
-
-    [IniUIntValue('Test', 'UIntVal', 4294967295)]
-    property UIntVal: cardinal read FUIntVal write FUIntVal;
-
-    [IniInt64Value('Test', 'Int64Val', -9223372036854775808, true)]
-    property Int64Val: int64 read FInt64Val write FInt64Val;
-
-    [IniInt64Value('Test', 'Int64Val2', 9223372036854775807, true)]
-    property Int64Val2: int64 read FInt64Val2 write FInt64Val2;
-
-    [IniUInt64Value('Test', 'UInt64Val', 18446744073709551615)]
-    property UInt64Val: uint64 read FUInt64Val write FUInt64Val;
-
-    [IniFloatValue('Test', 'FloatVal', 100.5)]
-    property FloatVal: double read FFloatVal write FFloatVal;
-
     [IniDateTimeValue('Test', 'DateTimeVal', 0)]  // Resolves to UTC equivalent of local time 1899-12-30T00:00:00.000 (start of Delphi epoch)
     property DateTimeVal: TDateTime read FDateTimeVal write FDateTimeVal;
 
@@ -108,8 +126,23 @@ type
     [IniSetValue('Test', 'SetVal', '[tfCalcRect, tfWordBreak]')]  // Provide sets as string
     property SetVal: TTextFormat read FSetValue write FSetValue;
 
-    [IniGUIDValue('Test', 'GUIDVal', '{00000000-0000-0000-0000-000000000000}')]
+    [IniGUIDValue('Test', 'GUIDVal', '{00000000-0000-0000-0000-000000000000}')]  // Provide GUIDs as string
     property GUIDVal: TGUID read FGUIDValue write FGUIDValue;
+
+    [IniStrValue('Test', 'CfgFile', ''), IniArrayLength(3)]
+    property CfgFileNames: TArray<string> read FCfgFileNames write FCfgFileNames;
+
+    [IniStrValue('Test', 'DatFile', 'C:\Foo\BarBaz.dat'), IniArrayLength(3)]
+     property DatFileNames: TDynStrArray read FDatFileNames write FDatFileNames;
+
+    [IniStrValue('Test', 'TmpFile')]
+    // property TmpFileNames: array of string       read FTmpFileNames write FTmpFileNames; => Does not compile
+    // property TmpFileNames: array[0..2] of string read FTmpFileNames write FTmpFileNames; => Does not compile
+    // property TmpFileNames: TStrArrayFail         read FTmpFileNames write FTmpFileNames; => Causes runtime error
+    property TmpFileNames: TStrArray read FTmpFileNames write FTmpFileNames;
+
+    [IniGUIDValue('Test', 'GUID'), IniArrayLength(3)]  // Default value for each array element is TGUID.Empty
+    property GUIDs: TArray<TGUID> read FGUIDs write FGUIDs;
 
   end;
 

@@ -1,7 +1,7 @@
 // MIT License
 //
-// Original Author: Robert Love, 2009
-// Extended:        Andreas Heim, 2015 - 2024
+// Based on ideas of Robert Love, 2009
+// Extended: Andreas Heim, 2015 - 2026
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -27,8 +27,8 @@ unit System.IniFiles.Persistence;
 interface
 
 uses
-  System.SysUtils, System.DateUtils, Soap.XSBuiltIns, System.UITypes, System.Classes,
-  System.TypInfo, System.Rtti, Vcl.Graphics, Vcl.Dialogs;
+  System.SysUtils, System.DateUtils, System.Math, Soap.XSBuiltIns, System.UITypes,
+  System.Classes, System.TypInfo, System.Rtti, System.IniFiles, Vcl.Graphics, Vcl.Dialogs;
 
 
 type
@@ -36,7 +36,6 @@ type
   // Forward declarations
   // ***************************************************************************
 
-  IniValueAttribute         = class;
   IniStrValueAttribute      = class;
   IniBoolValueAttribute     = class;
   IniIntValueAttribute      = class;
@@ -96,26 +95,27 @@ type
   end;
 
 
+  // Attribute class to specify how much elements a property or field of a dynamic array type should have
+  IniArrayLengthAttribute = class(TCustomAttribute)
+  strict protected
+    FLength: NativeInt;
+
+  public
+    constructor Create(const aLength: NativeInt = 0);
+
+    property    Length: NativeInt read FLength write FLength;
+
+  end;
+
+
   // Base class for all attribute classes supporting interfaces, should NOT be used directly
   InterfacedIniValueAttribute = class(IniValueAttribute, IInterface)
-  protected
+  strict protected
     // Methods of IInterface, reference counting is deactivated
     function QueryInterface(const IID: TGUID; out Obj): HResult; stdcall;
     function _AddRef: Integer; stdcall;
     function _Release: Integer; stdcall;
 
-  end;
-
-
-  // This attribute class can also be used as IniStrValue
-  IniStrValueAttribute = class(IniValueAttribute)
-  end;
-
-
-  // This attribute class can also be used as IniBoolValue
-  IniBoolValueAttribute = class(IniValueAttribute)
-  public
-    constructor Create(const aSection, aName: string; const aDefaultValue: boolean = false); overload;
   end;
 
 
@@ -131,6 +131,18 @@ type
 
     property    AsHex: boolean read GetAsHex;
 
+  end;
+
+
+  // This attribute class can also be used as IniStrValue
+  IniStrValueAttribute = class(IniValueAttribute)
+  end;
+
+
+  // This attribute class can also be used as IniBoolValue
+  IniBoolValueAttribute = class(IniValueAttribute)
+  public
+    constructor Create(const aSection, aName: string; const aDefaultValue: boolean = false); overload;
   end;
 
 
@@ -213,14 +225,27 @@ type
   // ***************************************************************************
 
   TIniPersistence = class (TObject)
+  strict private const
+    cErrMsg_ClassNoRTTI           = '%s: Class type [%s] has no runtime type information for class member [%s].';
+    cErrMsg_ArrayNoRTTI           = '%s: Class member [%s] is of array type [%s] that has no runtime type information.';
+    cErrMsg_ArrayElementNoRTTI    = '%s: Class member [%s] is of array type [%s] whose element type has no runtime type information.';
+    cErrMsg_ArrayNoDims           = '%s: Class member [%s] is of array type [%s] which has no dimensions.';
+    cErrMsg_ArrayMultipleDims     = '%s: Class member [%s] is of array type [%s] which has more than one dimension.';
+    cErrMsg_ArrayInplaceIndexType = '%s: Class member [%s] is of array type [%s] which must not have inplace type declaration for indices.';
+    cErrMsg_ArrayTypeUnsupported  = '%s: Class member [%s] is of data type [%s] which is an unsupported array type.';
+    cErrMsg_UnsupportedDataType   = '%s: Data type [%s] not supported.';
+
   strict private
+    class procedure Deserialize<T: TRttiDataMember>(aIni: TIniFile; aRttiCtx: TRttiContext; aObj: TObject; aObjMember: T; aAttr: IniValueAttribute; aArrayLength: NativeInt);
+    class procedure Serialize<T: TRttiDataMember>(aIni: TIniFile; aRttiCtx: TRttiContext; aObj: TObject; aObjMember: T; aAttr: IniValueAttribute);
+
+    class function  GetIniAttribute(aObj: TRttiObject; out aArrayLength: NativeInt): IniValueAttribute;
     class function  SetValue(var aValue: TValue; const aData: string): boolean;
-    class function  GetValue(const aValue: TValue; const Options: TIniStorageOptions): string;
-    class function  GetIniAttribute(Obj: TRttiObject): IniValueAttribute;
+    class function  GetValue(const aValue: TValue; const aOptions: TIniStorageOptions): string;
 
   public
-    class procedure Load(const FilePath: string; Obj: TObject);
-    class procedure Save(const FilePath: string; Obj: TObject);
+    class procedure Load(const aFilePath: string; aObj: TObject);
+    class procedure Save(const aFilePath: string; aObj: TObject);
 
   end;
 
@@ -232,20 +257,16 @@ var
 
 implementation
 
-uses
-  System.IniFiles;
-
-
 // *****************************************************************************
 // Helper and converter functions
 // *****************************************************************************
 
-function StrSurround(const AStr, StartStr, EndStr: string): string;
+function StrSurround(const aStr, aStartStr, aEndStr: string): string;
 begin
-  Result := AStr;
+  Result := aStr;
 
-  if not Result.StartsWith(StartStr) then Result := StartStr + Result;
-  if not Result.EndsWith  (EndStr)   then Result := Result   + EndStr;
+  if not Result.StartsWith(aStartStr) then Result := aStartStr + Result;
+  if not Result.EndsWith  (aEndStr)   then Result := Result   + aEndStr;
 end;
 
 
@@ -267,9 +288,9 @@ begin
 end;
 
 
-function ToUniversalTime(const aDateTime: TDateTime; const ForceDaylight: boolean = false): TDateTime;
+function ToUniversalTime(const aDateTime: TDateTime; const aForceDaylight: boolean = false): TDateTime;
 begin
-  Result := TTimeZone.Local.ToUniversalTime(aDateTime, ForceDaylight);
+  Result := TTimeZone.Local.ToUniversalTime(aDateTime, aForceDaylight);
 end;
 
 
@@ -291,6 +312,19 @@ end;
 function IniValueAttribute.DefaultValue(const aTypeInfo: PTypeInfo): string;
 begin
   Result := FDefaultValue;
+end;
+
+
+
+// *****************************************************************************
+// IniArrayLengthAttribute
+// *****************************************************************************
+
+constructor IniArrayLengthAttribute.Create(const aLength: NativeInt = 0);
+begin
+  inherited Create;
+
+  FLength := aLength;
 end;
 
 
@@ -322,17 +356,6 @@ end;
 
 
 // *****************************************************************************
-// IniBoolValueAttribute
-// *****************************************************************************
-
-constructor IniBoolValueAttribute.Create(const aSection, aName: string; const aDefaultValue: boolean = false);
-begin
-  inherited Create(aSection, aName, BoolToStr(aDefaultValue, true));
-end;
-
-
-
-// *****************************************************************************
 // IniNumericValueAttribute
 // *****************************************************************************
 
@@ -347,6 +370,17 @@ end;
 function IniNumericValueAttribute.GetAsHex: boolean;
 begin
   Result := FAsHex;
+end;
+
+
+
+// *****************************************************************************
+// IniBoolValueAttribute
+// *****************************************************************************
+
+constructor IniBoolValueAttribute.Create(const aSection, aName: string; const aDefaultValue: boolean = false);
+begin
+  inherited Create(aSection, aName, BoolToStr(aDefaultValue, true));
 end;
 
 
@@ -483,54 +517,41 @@ end;
 // TIniPersistence
 // *****************************************************************************
 
-class procedure TIniPersistence.Load(const FilePath: string; Obj: TObject);
+class procedure TIniPersistence.Load(const aFilePath: string; aObj: TObject);
 var
-  ctx:      TRttiContext;
-  objType:  TRttiType;
-  Field:    TRttiField;
-  Prop:     TRttiProperty;
-  IniValue: IniValueAttribute;
-  Value:    TValue;
-  Ini:      TIniFile;
-  Data:     string;
+  RttiCtx:     TRttiContext;
+  ObjType:     TRttiType;
+  Field:       TRttiField;
+  Prop:        TRttiProperty;
+  Attr:        IniValueAttribute;
+  Ini:         TIniFile;
+  ArrayLength: NativeInt;
 
 begin
-  ctx := TRttiContext.Create;
+  RttiCtx := TRttiContext.Create;
 
   try
-    Ini := TIniFile.Create(FilePath);
+    Ini := TIniFile.Create(aFilePath);
 
     try
-      objType := ctx.GetType(Obj.ClassInfo);
+      ObjType := RttiCtx.GetType(aObj.ClassInfo);
 
       // Load values of properties
-      for Prop in objType.GetProperties do
+      for Prop in ObjType.GetProperties do
       begin
-        IniValue := GetIniAttribute(Prop);
+        Attr := GetIniAttribute(Prop, ArrayLength);
 
-        if not Assigned(IniValue) then
-          continue;
-
-        Value := Prop.GetValue(Obj);
-        Data  := Ini.ReadString(IniValue.Section, IniValue.Name, IniValue.DefaultValue(Value.TypeInfo));
-
-        if SetValue(Value, Data) then
-          Prop.SetValue(Obj, Value);
+        if Assigned(Attr) then
+          Deserialize<TRttiProperty>(Ini, RttiCtx, aObj, Prop, Attr, ArrayLength);
       end;
 
       // Load values of field variables
-      for Field in objType.GetFields do
+      for Field in ObjType.GetFields do
       begin
-        IniValue := GetIniAttribute(Field);
+        Attr := GetIniAttribute(Field, ArrayLength);
 
-        if not Assigned(IniValue) then
-          continue;
-
-        Value := Field.GetValue(Obj);
-        Data  := Ini.ReadString(IniValue.Section, IniValue.Name, IniValue.DefaultValue(Value.TypeInfo));
-
-        if SetValue(Value, Data) then
-          Field.SetValue(Obj, Value);
+        if Assigned(Attr) then
+          Deserialize<TRttiField>(Ini, RttiCtx, aObj, Field, Attr, ArrayLength);
       end;
 
     finally
@@ -538,31 +559,28 @@ begin
     end;
 
   finally
-    ctx.Free;
+    RttiCtx.Free;
   end;
 end;
 
 
-class procedure TIniPersistence.Save(const FilePath: string; Obj: TObject);
+class procedure TIniPersistence.Save(const aFilePath: string; aObj: TObject);
 var
-  ctx:         TRttiContext;
-  objType:     TRttiType;
+  RttiCtx:     TRttiContext;
+  ObjType:     TRttiType;
   Field:       TRttiField;
   Prop:        TRttiProperty;
-  IniValue:    IniValueAttribute;
-  Value:       TValue;
-  IniValueIf:  IAsHex;
-  Options:     TIniStorageOptions;
+  Attr:        IniValueAttribute;
   Ini:         TIniFile;
   IniSections: TStringList;
   IniSection:  string;
-  Data:        string;
+  ArrayLength: NativeInt;
 
 begin
-  ctx := TRttiContext.Create;
+  RttiCtx := TRttiContext.Create;
 
   try
-    Ini         := TIniFile.Create(FilePath);
+    Ini         := TIniFile.Create(aFilePath);
     IniSections := TStringList.Create;
 
     try
@@ -572,48 +590,24 @@ begin
       for IniSection in IniSections do
         Ini.EraseSection(IniSection);
 
-      objType := ctx.GetType(Obj.ClassInfo);
+      ObjType := RttiCtx.GetType(aObj.ClassInfo);
 
       // Save values of properties
-      for Prop in objType.GetProperties do
+      for Prop in ObjType.GetProperties do
       begin
-        IniValue := GetIniAttribute(Prop);
-        Options  := [];
+        Attr := GetIniAttribute(Prop, ArrayLength);
 
-        if Assigned(IniValue) then
-        begin
-          if IniValue is InterfacedIniValueAttribute then
-          begin
-            if Supports(IniValue, IAsHex, IniValueIf) and
-               IniValueIf.AsHex                       then
-              Include(Options, isoAsHex);
-          end;
-
-          Value := Prop.GetValue(Obj);
-          Data  := GetValue(Value, Options);
-          Ini.WriteString(IniValue.Section, IniValue.Name, Data)
-        end;
+        if Assigned(Attr) then
+          Serialize<TRttiProperty>(Ini, RttiCtx, aObj, Prop, Attr);
       end;
 
       // Save values of field variables
-      for Field in objType.GetFields do
+      for Field in ObjType.GetFields do
       begin
-        IniValue := GetIniAttribute(Field);
-        Options  := [];
+        Attr := GetIniAttribute(Field, ArrayLength);
 
-        if Assigned(IniValue) then
-        begin
-          if IniValue is InterfacedIniValueAttribute then
-          begin
-            if Supports(IniValue, IAsHex, IniValueIf) and
-               IniValueIf.AsHex                       then
-              Include(Options, isoAsHex);
-          end;
-
-          Value := Field.GetValue(Obj);
-          Data  := GetValue(Value, Options);
-          Ini.WriteString(IniValue.Section, IniValue.Name, Data);
-        end;
+        if Assigned(Attr) then
+          Serialize<TRttiField>(Ini, RttiCtx, aObj, Field, Attr);
       end;
 
     finally
@@ -622,23 +616,301 @@ begin
     end;
 
   finally
-    ctx.Free;
+    RttiCtx.Free;
   end;
 end;
 
 
-class function TIniPersistence.GetIniAttribute(Obj: TRttiObject): IniValueAttribute;
+class function TIniPersistence.GetIniAttribute(aObj: TRttiObject; out aArrayLength: NativeInt): IniValueAttribute;
 var
   Attr: TCustomAttribute;
 
 begin
-  for Attr in Obj.GetAttributes do
+  Result       := nil;
+  aArrayLength := 0;
+
+  for Attr in aObj.GetAttributes do
   begin
     if Attr is IniValueAttribute then
-      exit(IniValueAttribute(Attr));
+      Result := IniValueAttribute(Attr)
+
+    else if Attr is IniArrayLengthAttribute then
+      aArrayLength := IniArrayLengthAttribute(Attr).Length;
+  end;
+end;
+
+
+// Called to read a value from INI file and store it into variable or property of class instance
+class procedure TIniPersistence.Deserialize<T>(aIni: TIniFile; aRttiCtx: TRttiContext; aObj: TObject; aObjMember: T; aAttr: IniValueAttribute; aArrayLength: NativeInt);
+var
+  Options:    TIniStorageOptions;
+  ArrType:    TRttiArrayType;
+  DynArrType: TRttiDynamicArrayType;
+  IndexType:  TRttiOrdinalType;
+  ElemType:   TRttiType;
+  Value:      TValue;
+  ElemValue:  TValue;
+  ElemCnt:    NativeInt;
+  ValueList:  TStringList;
+  Idx:        integer;
+  MinIdx:     integer;
+  MaxIdx:     integer;
+  Data:       string;
+
+begin
+  Options := [];
+
+  // Get TValue holding variable/property type info
+  // and buffer to hold the actual data later on
+  Value := aObjMember.GetValue(aObj);
+
+  if not Assigned(Value.TypeInfo) then
+    raise ENotSupportedException.CreateFmt(cErrMsg_ClassNoRTTI, [ClassName, aObj.ClassName, aObjMember.Name]);
+
+  if not Value.IsArray then
+  begin
+    // Process variable/property marked as scalar type
+    Data := aIni.ReadString(aAttr.Section, aAttr.Name, aAttr.DefaultValue(Value.TypeInfo));
+
+    // Transform string value read from INI file into TValue and
+    // write TValue into variable/property of class instance
+    if SetValue(Value, Data) then      // Data conversion from string to actual type
+      aObjMember.SetValue(aObj, Value);  // Transfer converted data into class instance
+  end
+  else
+  begin
+    // Process variable/property marked as array type
+    MinIdx := 0;
+    MaxIdx := 0;
+
+    // Get type info of array element type in order to determine its default value
+    // For static array additionally get its min and max indices
+    case Value.TypeInfo.Kind of
+      tkArray:
+      begin
+        ArrType := aRttiCtx.GetType(Value.TypeInfo) as TRttiArrayType;
+
+        if not Assigned(ArrType) then
+          raise ENotSupportedException.CreateFmt(cErrMsg_ArrayNoRTTI, [ClassName, aObjMember.Name, Value.TypeInfo.Name]);
+
+        ElemType := ArrType.ElementType;
+
+        if not Assigned(ElemType) then
+          raise ENotSupportedException.CreateFmt(cErrMsg_ArrayElementNoRTTI, [ClassName, aObjMember.Name, Value.TypeInfo.Name]);
+
+        if ArrType.DimensionCount <= 0 then
+          raise ENotSupportedException.CreateFmt(cErrMsg_ArrayNoDims, [ClassName, aObjMember.Name, Value.TypeInfo.Name]);
+
+        if ArrType.DimensionCount > 1 then
+          raise ENotSupportedException.CreateFmt(cErrMsg_ArrayMultipleDims, [ClassName, aObjMember.Name, Value.TypeInfo.Name]);
+
+        IndexType := ArrType.Dimensions[0] as TRttiOrdinalType;
+
+        if not Assigned(IndexType) then
+          raise ENotSupportedException.CreateFmt(cErrMsg_ArrayInplaceIndexType, [ClassName, aObjMember.Name, Value.TypeInfo.Name]);
+
+        MinIdx := IndexType.MinValue;
+        MaxIdx := IndexType.MaxValue;
+      end;
+
+      tkDynArray:
+      begin
+        DynArrType := aRttiCtx.GetType(Value.TypeInfo) as TRttiDynamicArrayType;
+
+        if not Assigned(DynArrType) then
+          raise ENotSupportedException.CreateFmt(cErrMsg_ArrayNoRTTI, [ClassName, aObjMember.Name, Value.TypeInfo.Name]);
+
+        ElemType := DynArrType.ElementType;
+      end;
+
+      else
+        raise ENotSupportedException.CreateFmt(cErrMsg_ArrayTypeUnsupported, [ClassName, aObjMember.Name, Value.TypeInfo.Name]);
+    end;
+
+    ValueList := TStringList.Create;
+
+    try
+      ValueList.Duplicates      := dupAccept;
+      ValueList.QuoteChar       := #0;
+      ValueList.Delimiter       := #0;
+      ValueList.StrictDelimiter := true;
+      ValueList.CaseSensitive   := false;
+      ValueList.Sorted          := false;
+
+      // Read indexed values from INI file into string list
+      Idx := 1;  // Indices of INI file indexed values have to be 1-based and contiguously numbered
+
+      while aIni.ValueExists(aAttr.Section, aAttr.Name + IntToStr(Idx)) do
+      begin
+        Data := aIni.ReadString(aAttr.Section, aAttr.Name + IntToStr(Idx), aAttr.DefaultValue(ElemType.Handle));
+        ValueList.Add(Data);
+
+        Inc(Idx);
+      end;
+
+      // Transfer read values into data buffer of TValue
+      case Value.TypeInfo.Kind of
+        tkArray:
+        begin
+          // Fill all elements of static array using default values if necessary
+          // Note: Memory of static array has been already allocated by compiler
+          for Idx := MinIdx to MaxIdx do
+          begin
+            ElemValue := Value.GetArrayElement(Idx);
+
+            if Idx - MinIdx < ValueList.Count then
+              Data := ValueList[Idx - MinIdx]
+            else
+              Data := aAttr.DefaultValue(ElemType.Handle);
+
+            if SetValue(ElemValue, Data) then         // Data conversion from string to actual type
+              Value.SetArrayElement(Idx, ElemValue);  // Transfer type info and converted data into TValue
+          end;
+        end;
+
+        tkDynArray:
+        begin
+          // Fill up dynamic array to requested number of elements using default values if necessary
+          // Note: Memory of dynamic array has to be allocated manually right now
+          ElemCnt := Max(aArrayLength, ValueList.Count);
+          DynArraySetLength(PPointer(Value.GetReferenceToRawData)^, Value.TypeInfo, 1, @ElemCnt);
+
+          for Idx := 0 to Pred(ElemCnt) do
+          begin
+            ElemValue := Value.GetArrayElement(Idx);
+
+            if Idx < ValueList.Count then
+              Data := ValueList[Idx]
+            else
+              Data := aAttr.DefaultValue(ElemType.Handle);
+
+            if SetValue(ElemValue, Data) then         // Data conversion from string to actual type
+              Value.SetArrayElement(Idx, ElemValue);  // Transfer type info and converted data into TValue
+          end;
+        end;
+      end;
+
+    finally
+      ValueList.Free;
+    end;
+
+    // Transfer content of TValue's data buffer into class instance
+    aObjMember.SetValue(aObj, Value);
+  end;
+end;
+
+
+// Called to get the value of a variable or property of a class instance and write it to INI file
+class procedure TIniPersistence.Serialize<T>(aIni: TIniFile; aRttiCtx: TRttiContext; aObj: TObject; aObjMember: T; aAttr: IniValueAttribute);
+var
+  Options:   TIniStorageOptions;
+  ArrType:   TRttiArrayType;
+  IndexType: TRttiOrdinalType;
+  AttrHexIf: IAsHex;
+  Value:     TValue;
+  ElemValue: TValue;
+  ElemCnt:   NativeInt;
+  Idx:       integer;
+  MinIdx:    integer;
+  MaxIdx:    integer;
+  Data:      string;
+
+begin
+  Options := [];
+
+  // Read processing options of variable/property
+  if aAttr is InterfacedIniValueAttribute then
+  begin
+    if Supports(aAttr, IAsHex, AttrHexIf) and
+       AttrHexIf.AsHex                    then
+      Include(Options, isoAsHex);
   end;
 
-  Result := nil;
+  // Get TValue holding variable/property type info
+  // and buffer that holds the actual data
+  Value := aObjMember.GetValue(aObj);
+
+  if not Assigned(Value.TypeInfo) then
+    raise ENotSupportedException.CreateFmt(cErrMsg_ClassNoRTTI, [ClassName, aObj.ClassName, aObjMember.Name]);
+
+  if not Value.IsArray then
+  begin
+    // Process variable/property marked as scalar type
+    // Data conversion from actual type to string
+    Data := GetValue(Value, Options);
+
+    // Write value to INI file
+    aIni.WriteString(aAttr.Section, aAttr.Name, Data);
+  end
+  else
+  begin
+    // Process variable/property marked as array type
+    MinIdx := 0;
+    MaxIdx := 0;
+
+    // Get type info of static array in order to get its min and max indices
+    case Value.TypeInfo.Kind of
+      tkArray:
+      begin
+        ArrType := aRttiCtx.GetType(Value.TypeInfo) as TRttiArrayType;
+
+        if not Assigned(ArrType) then
+          raise ENotSupportedException.CreateFmt(cErrMsg_ArrayNoRTTI, [ClassName, aObjMember.Name, Value.TypeInfo.Name]);
+
+        if not Assigned(ArrType.ElementType) then
+          raise ENotSupportedException.CreateFmt(cErrMsg_ArrayElementNoRTTI, [ClassName, aObjMember.Name, Value.TypeInfo.Name]);
+
+        if ArrType.DimensionCount <= 0 then
+          raise ENotSupportedException.CreateFmt(cErrMsg_ArrayNoDims, [ClassName, aObjMember.Name, Value.TypeInfo.Name]);
+
+        if ArrType.DimensionCount > 1 then
+          raise ENotSupportedException.CreateFmt(cErrMsg_ArrayMultipleDims, [ClassName, aObjMember.Name, Value.TypeInfo.Name]);
+
+        IndexType := ArrType.Dimensions[0] as TRttiOrdinalType;
+
+        if not Assigned(IndexType) then
+          raise ENotSupportedException.CreateFmt(cErrMsg_ArrayInplaceIndexType, [ClassName, aObjMember.Name, Value.TypeInfo.Name]);
+
+        MinIdx := IndexType.MinValue;
+        MaxIdx := IndexType.MaxValue;
+      end;
+
+      tkDynArray:
+      begin
+        // Nothing to do
+      end;
+
+      else
+        raise ENotSupportedException.CreateFmt(cErrMsg_ArrayTypeUnsupported, [ClassName, aObjMember.Name, Value.TypeInfo.Name]);
+    end;
+
+    // Write value from class instance to INI file
+    case Value.TypeInfo.Kind of
+      tkArray:
+      begin
+        for Idx := MinIdx to MaxIdx do
+        begin
+          ElemValue := Value.GetArrayElement(Idx);    // Transfer type info and actual data into TValue
+          Data      := GetValue(ElemValue, Options);  // Data conversion from actual type to string
+
+          aIni.WriteString(aAttr.Section, aAttr.Name + IntToStr(Succ(Idx - MinIdx)), Data);
+        end;
+      end;
+
+      tkDynArray:
+      begin
+        ElemCnt := Value.GetArrayLength;
+
+        for Idx := 0 to Pred(ElemCnt) do
+        begin
+          ElemValue := Value.GetArrayElement(Idx);    // Transfer type info and actual data into TValue
+          Data      := GetValue(ElemValue, Options);  // Data conversion from actual type to string
+
+          aIni.WriteString(aAttr.Section, aAttr.Name + IntToStr(Succ(Idx)), Data);
+        end;
+      end;
+    end;
+  end;
 end;
 
 
@@ -705,7 +977,11 @@ begin
         // Only TGUID is supported
         if AValue.TypeInfo.Name = PTypeInfo(TypeInfo(TGUID)).Name then
         begin
-          AGuid := StringToGUID(AData);
+          if aData.IsEmpty then
+            AGuid := TGUID.Empty
+          else
+            AGuid := StringToGUID(aData);
+
           TValue.Make(@AGuid, AValue.TypeInfo, AValue);
           exit(true);
         end;
@@ -719,13 +995,13 @@ begin
     end;
   end;
 
-  raise EConvertError.CreateFmt('%s: Data type [%s] not supported', [ClassName, aValue.TypeInfo.Name]);
+  raise ENotSupportedException.CreateFmt(cErrMsg_UnsupportedDataType, [ClassName, aValue.TypeInfo.Name]);
 end;
 
 
 // Called when a certain value has to be converted to string in order to write
 // it to the INI file
-class function TIniPersistence.GetValue(const aValue: TValue; const Options: TIniStorageOptions): string;
+class function TIniPersistence.GetValue(const aValue: TValue; const aOptions: TIniStorageOptions): string;
 begin
   case aValue.Kind of
     tkWChar,
@@ -748,7 +1024,7 @@ begin
         Result := To8DigitHexString(ColorToRGB(aValue.AsType<TColor>))
 
       // Check if value should be stored as hex string
-      else if isoAsHex in Options then
+      else if isoAsHex in aOptions then
         Result := To8DigitHexString(aValue.AsType<cardinal>)
       else
         Result := aValue.ToString;
@@ -759,7 +1035,7 @@ begin
     tkInt64:
     begin
       // Check if value should be stored as hex string
-      if isoAsHex in Options then
+      if isoAsHex in aOptions then
         Result := To16DigitHexString(aValue.AsUInt64)
       else
         Result := aValue.ToString;
@@ -780,14 +1056,14 @@ begin
 
     tkRecord:
       // Only TGUID is supported
-      if AValue.TypeInfo.Name = PTypeInfo(TypeInfo(TGUID)).Name then
+      if aValue.TypeInfo.Name = PTypeInfo(TypeInfo(TGUID)).Name then
       begin
-        Result := AValue.AsType<TGUID>.ToString();
+        Result := aValue.AsType<TGUID>.ToString();
         exit;
       end
   end;
 
-  raise EConvertError.CreateFmt('%s: Data type [%s] not supported', [ClassName, aValue.TypeInfo.Name]);
+  raise ENotSupportedException.CreateFmt(cErrMsg_UnsupportedDataType, [ClassName, aValue.TypeInfo.Name]);
 end;
 
 
