@@ -84,7 +84,7 @@ For properties and field variables the following data types are supported out-of
 - sets of arbitrary types (which are supported by Delphi's `StringToSet`)
 - TGUID
 
-All of these data types are supported both as scalar values and as dynamic and static arrays. If the property/field is of an array type whose elements are of a supported scalar type, the elements are mapped to indexed values in the INI file, see chapter [Indexed INI values mapped to arrays](###-Indexed-INI-values-mapped-to-arrays).
+All of these data types are supported both as scalar values and as dynamic and static arrays. If the property/field is of an array type whose elements are of a supported scalar type, the elements are mapped to indexed values in the INI file, see chapter [Indexed INI values mapped to arrays](#indexed-ini-values-mapped-to-arrays).
 
 If you want to add support for additional data types, you have to write your own corresponding attribute classes and to extend the class methods `TIniPersistence.GetValue` and `TIniPersistence.SetValue`. List types may require you to extend the class methods `TIniPersistence.Serialize<T>` and `TIniPersistence.Deserialize<T>` as well.
 
